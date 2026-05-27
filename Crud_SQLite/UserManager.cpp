@@ -1,6 +1,7 @@
 #include "UserManager.h"
 #include <iostream>
 #include <algorithm>
+#include <vector>
 
 UserManager::UserManager(const std::string& dbPath) {
     // Initialize the SQLite database connection
@@ -34,89 +35,158 @@ void UserManager::createTable() {
     }
 }
 
-void UserManager::createUser(int id, const std::string& username) {
-    std::string sql = "INSERT INTO users (id, username) VALUES (" + std::to_string(id) + ", '" + username + "');";
-    char* errMsg = nullptr;
-    if (sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        std::cerr << "Error inserting user: " << errMsg << std::endl;
-        sqlite3_free(errMsg);
+bool UserManager::createUser(int id, const std::string& username) {
+    // Use a prepared statement to prevent SQL injection
+    std::string sql = "INSERT INTO users (id, username) VALUES (?, ?);";
+    
+    // Prepare the SQL statement
+    sqlite3_stmt* stmt;
+    // compile the SQL template into a statement object
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Error preparing statement: " << sqlite3_errmsg(db) << std::endl;
+        return false;
+    }
+
+    // Bind the parameters to the statement
+    sqlite3_bind_int(stmt, 1, id);
+    sqlite3_bind_text(stmt, 2, username.c_str(), -1, SQLITE_STATIC);
+    
+    // Execute the statement
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "Error inserting user: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt);
+        return false;
     } else {
         std::cout << "User with ID " << id << " created." << std::endl;
+        sqlite3_finalize(stmt);
+        return true;
     }
 }
 
-static int getUserCallback(void* data, int argc, char** argv, char** colName) {
-    User* user = static_cast<User*>(data);
-    if (argv[0]) user->id = std::stoi(argv[0]);
-    if (argv[1]) user->username = argv[1];
-    std::cout << "id: " << user->id << "  username: " << user->username << std::endl;
-    return 0;
-}
-
 User UserManager::getUser(int id) {
-    std::string sql = "SELECT id, username FROM users WHERE id = " + std::to_string(id) + ";";
+    std::string sql = "SELECT id, username FROM users WHERE id = ?;";
+    
+    // Prepare the SQL statement
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Error preparing statement: " << sqlite3_errmsg(db) << std::endl;
+        throw std::runtime_error("Database error");
+    }
+    else {
+        std::cout << "Prepared statement for retrieving user." << std::endl;
+    }
+
+    // Bind the parameter to the statement
+    sqlite3_bind_int(stmt, 1, id);
+
     char* errMsg = nullptr;
     User user{0, ""};
     std::cout << "--- User Details ---" << std::endl;
-    if (sqlite3_exec(db, sql.c_str(), getUserCallback, &user, &errMsg) != SQLITE_OK) {
-        std::cerr << "Error retrieving user: " << errMsg << std::endl;
-        sqlite3_free(errMsg);
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        user.id = sqlite3_column_int(stmt, 0);
+        user.username = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        std::cout << "id: " << user.id << "  username: " << user.username << std::endl;
+    } else {
+        std::cerr << "Error retrieving user: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt);
         throw std::runtime_error("Database error");
     }
     if (user.id == 0) {
         throw std::runtime_error("User not found");
     }
+    sqlite3_finalize(stmt);
     return user;
 }
 
-static int printAllUsersCallback(void* data, int argc, char** argv, char** colName) {
-    for (int i = 0; i < argc; i++) {
-        std::cout << colName[i] << ": " << (argv[i] ? argv[i] : "NULL") << "  ";
-    }
-    std::cout << std::endl;
-    return 0;
-}
-
-void UserManager::getAllUsers() {
+std::vector<User> UserManager::getAllUsers() {
     const char* sql = "SELECT id, username FROM users;";
     char* errMsg = nullptr;
-    std::cout << "--- All Users ---" << std::endl;
-    if (sqlite3_exec(db, sql, printAllUsersCallback, nullptr, &errMsg) != SQLITE_OK) {
-        std::cerr << "Error retrieving users: " << errMsg << std::endl;
-        sqlite3_free(errMsg);
+    
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Error preparing statement: " << sqlite3_errmsg(db) << std::endl;
+        return {};
     }
+    
+    std::vector<User> users;
+
+    std::cout << "--- All Users ---" << std::endl;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        User user;
+        user.id = sqlite3_column_int(stmt, 0);
+        user.username = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        users.push_back(user);
+        std::cout << "id: " << user.id << "  username: " << user.username << std::endl;
+    }
+    sqlite3_finalize(stmt);
+    return users;
 }
 
-void UserManager::updateUser(int id, const std::string& newUsername) {
-    std::string sql = "UPDATE users SET username = '" + newUsername + "' WHERE id = " + std::to_string(id) + ";";
-    char* errMsg = nullptr;
-    if (sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        std::cerr << "Error updating user: " << errMsg << std::endl;
-        sqlite3_free(errMsg);
+bool UserManager::updateUser(int id, const std::string& newUsername) {
+    std::string sql = "UPDATE users SET username = ? WHERE id = ?;";
+    
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Error preparing statement: " << sqlite3_errmsg(db) << std::endl;
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, newUsername.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, id);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "Error updating user: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt);
+        return false;
     } else {
         std::cout << "User with ID " << id << " updated." << std::endl;
+        sqlite3_finalize(stmt);
+        return true;
     }
 }
 
-void UserManager::deleteUser(int id) {
-    std::string sql = "DELETE FROM users WHERE id = " + std::to_string(id) + ";";
+bool UserManager::deleteUser(int id) {
+    std::string sql = "DELETE FROM users WHERE id = ?;";
+    
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Error preparing statement: " << sqlite3_errmsg(db) << std::endl;
+        return false;
+    }   
+
+    sqlite3_bind_int(stmt, 1, id);
+
     char* errMsg = nullptr;
-    if (sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        std::cerr << "Error deleting user: " << errMsg << std::endl;
-        sqlite3_free(errMsg);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "Error deleting user: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt);
+        return false;
     } else {
         std::cout << "User with ID " << id << " deleted." << std::endl;
-    }
+        sqlite3_finalize(stmt);
+        return true;
+    } 
 }
 
-void UserManager::deleteAllUsers() {
+bool UserManager::deleteAllUsers() {
     const char* sql = "DELETE FROM users;";
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Error preparing statement: " << sqlite3_errmsg(db) << std::endl;
+        return false;
+    }
+    
+    
     char* errMsg = nullptr;
     if (sqlite3_exec(db, sql, nullptr, nullptr, &errMsg) != SQLITE_OK) {
         std::cerr << "Error deleting all users: " << errMsg << std::endl;
+        sqlite3_finalize(stmt);
         sqlite3_free(errMsg);
+        return false;
     } else {
         std::cout << "All users deleted." << std::endl;
     }
+    sqlite3_finalize(stmt);
+    return true;
 }
-

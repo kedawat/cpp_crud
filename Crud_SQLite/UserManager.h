@@ -21,12 +21,12 @@ class UserManager{
         ~UserManager();    // Destructor to close the database connection   
 
         // CRUD operations
-        void createUser(int id, const std::string& username);
+        bool createUser(int id, const std::string& username);
         User getUser(int id);
-        void getAllUsers();
-        void updateUser(int id, const std::string& newUsername);
-        void deleteUser(int id);
-        void deleteAllUsers();
+        std::vector<User> getAllUsers();
+        bool updateUser(int id, const std::string& newUsername);
+        bool deleteUser(int id);
+        bool deleteAllUsers();
 };
 
 #endif // USER_MANAGER_H

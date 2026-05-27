@@ -6,4 +6,4 @@ main: main.cpp UserManager.cpp
 	$(cxx) $(CFLAGS) -o main main.cpp UserManager.cpp $(LDFLAGS)
 
 clean:
-	rm -f main
+	del /f main.exe 2>nul || true

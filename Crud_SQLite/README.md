@@ -70,4 +70,18 @@ Database connection closed.
 
 - The database file `users.db` is created in the working directory.
 - Each run clears and recreates user data as demonstrated in `main.cpp`.
-- This is a learning project; SQL queries use string concatenation. For production use, prefer prepared statements (`sqlite3_prepare_v2`) to prevent SQL injection.
+- All SQL queries use **prepared statements** (`sqlite3_prepare_v2` with parameter binding) to prevent SQL injection.
+
+---
+
+## Changelog
+
+### v1.1 – SQL Injection Prevention
+- Replaced raw string concatenation in SQL queries with prepared statements (`sqlite3_prepare_v2`).
+- All user inputs are now bound via `sqlite3_bind_*` functions, preventing SQL injection attacks.
+- Affected methods: `createUser`, `getUser`, `getAllUsers`, `updateUser`, `deleteUser`, `deleteAllUsers`.
+- Updated `main.cpp` demo to include security test cases (SQL injection attempt, duplicate key handling) and improved output formatting.
+
+### v1.0 – Initial Release
+- Basic CRUD operations with SQLite.
+- SQL queries used string concatenation (not safe for production).
